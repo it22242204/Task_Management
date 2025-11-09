@@ -8,30 +8,56 @@ type Task = {
   completed: boolean
 }
 
-export default function TaskList({ tasks, onChanged }: { tasks: Task[]; onChanged: () => void }) {
+export default function TaskList({ tasks, onChanged, onError }: { tasks: Task[]; onChanged: () => void; onError?: (msg: string) => void }) {
+  const [mutating, setMutating] = React.useState<string | null>(null)
+
   async function toggle(task: Task) {
-    const supabase = getSupabase()
-    await supabase.from('tasks').update({ completed: !task.completed }).eq('id', task.id)
-    onChanged()
+    setMutating(task.id)
+    try {
+      const supabase = getSupabase()
+      const { error } = await supabase.from('tasks').update({ completed: !task.completed }).eq('id', task.id)
+      if (error) {
+        onError?.(error.message)
+        return
+      }
+      onChanged()
+    } finally {
+      setMutating(null)
+    }
   }
 
   async function remove(id: string) {
-    const supabase = getSupabase()
-    await supabase.from('tasks').delete().eq('id', id)
-    onChanged()
+    if (!confirm('Delete this task?')) return
+    setMutating(id)
+    try {
+      const supabase = getSupabase()
+      const { error } = await supabase.from('tasks').delete().eq('id', id)
+      if (error) {
+        onError?.(error.message)
+        return
+      }
+      onChanged()
+    } finally {
+      setMutating(null)
+    }
   }
 
   return (
-    <ul className="mt-4 space-y-2">
+    <ul className="mt-4 divide-y divide-gray-100 rounded-md overflow-hidden shadow-sm">
       {tasks.map((t) => (
-        <li key={t.id} className="flex items-center justify-between bg-white p-3 rounded shadow-sm">
-          <div className="flex items-center gap-3">
-            <input type="checkbox" checked={t.completed} onChange={() => toggle(t)} />
-            <span className={t.completed ? 'line-through text-gray-400' : ''}>{t.title}</span>
+        <li key={t.id} className="flex items-center justify-between bg-white px-4 py-3">
+          <div className="flex items-center gap-4">
+            <input type="checkbox" checked={t.completed} onChange={() => toggle(t)} disabled={!!mutating} className="w-4 h-4" />
+            <span className={t.completed ? 'line-through text-gray-400' : 'text-gray-900'}>{t.title}</span>
           </div>
-          <button onClick={() => remove(t.id)} className="text-sm text-red-600">Delete</button>
+          <button onClick={() => remove(t.id)} className="text-sm text-red-600 hover:underline" disabled={!!mutating}>
+            {mutating === t.id ? 'Working...' : 'Delete'}
+          </button>
         </li>
       ))}
+      {tasks.length === 0 ? (
+        <li className="p-6 text-center text-gray-500 bg-white">No tasks yet — add your first task above.</li>
+      ) : null}
     </ul>
   )
 }
